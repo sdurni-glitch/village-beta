@@ -1,0 +1,52 @@
+name: Lantern backend checks
+on:
+  push:
+    branches:
+      - fix/lantern-router-security-20261122
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Syntax check
+        run: npm run check
+      - name: HTTP health smoke test
+        run: |
+          set -eu
+          PORT=5055 npm start > /tmp/lantern-start.log 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          async function check() {
+            for (let attempt = 0; attempt < 30; attempt++) {
+              try {
+                const response = await fetch('http://127.0.0.1:5055/health');
+                assert.equal(response.status, 200);
+                const body = await response.json();
+                assert.equal(body.status, 'ok');
+                assert.equal(body.service, 'lantern-backend');
+                return;
+              } catch (error) {
+                if (attempt === 29) throw error;
+                await new Promise(resolve => setTimeout(resolve, 250));
+              }
+            }
+          }
+          check().catch(error => { console.error(error); process.exitCode = 1; });
+          NODE
+      - name: Socket authentication tests
+        run: npm test
