@@ -29,13 +29,22 @@ io.use((socket, next) => {
   next();
 });
 
+// Bound each authenticated socket to 10 messages per rolling second.
+// This limits individual clients; distributed abuse still needs edge controls.
 io.on("connection", (socket) => {
   console.log("Authenticated socket connected:", socket.id);
+  const recentMessages = [];
 
   socket.on("sendMessage", (msg) => {
     if (typeof msg !== "string" || msg.length === 0 || msg.length > 4096) {
       return;
     }
+    const now = Date.now();
+    while (recentMessages.length && recentMessages[0] <= now - 1000) {
+      recentMessages.shift();
+    }
+    if (recentMessages.length >= 10) return;
+    recentMessages.push(now);
     io.emit("receiveMessage", msg);
   });
 });
