@@ -2,9 +2,9 @@ name: Node.js CI
 
 on:
   push:
-    branches: [main]
+    branches: [staging/lantern-backend-20261122]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 permissions:
   contents: read
