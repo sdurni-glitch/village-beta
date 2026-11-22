@@ -55,3 +55,37 @@ test("Socket.IO rejects missing and invalid tokens, accepts valid token", async 
     child.kill();
   }
 });
+
+
+test("Socket.IO drops messages above the per-socket rate limit", async () => {
+  const child = spawn(process.execPath, ["server.js"], {
+    env: { ...process.env, PORT: String(port), LANTERN_SOCKET_TOKEN: token },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  let socket;
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (child.exitCode !== null) throw new Error("Server exited before startup");
+      try {
+        if ((await fetch(`${url}/health`)).ok) { ready = true; break; }
+      } catch {}
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(ready, "Server did not become healthy");
+    socket = io(url, { transports: ["websocket"], reconnection: false, auth: { token } });
+    await new Promise((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("connect_error", reject);
+    });
+    const received = [];
+    socket.on("receiveMessage", message => received.push(message));
+    for (let i = 0; i < 20; i++) socket.emit("sendMessage", `burst-${i}`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    assert.equal(received.length, 10);
+    assert.deepEqual(received, Array.from({ length: 10 }, (_, i) => `burst-${i}`));
+  } finally {
+    socket?.disconnect();
+    child.kill();
+  }
+});
